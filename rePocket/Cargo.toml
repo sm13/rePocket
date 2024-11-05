@@ -1,0 +1,24 @@
+[package]
+name = "rePocket"
+version.workspace = true
+edition.workspace = true
+description = "reMarkable Pocket Client"
+
+
+[dependencies]
+ammonia = "4.0.0"
+chrono = "0.4.38"
+epub-builder = { version = "0.7.4", default-features = false, features = ["zip-library"] }
+readability = { version = "0.3.0", default-features = false, features = ["reqwest"] }
+readable-readability = "0.4.0"
+regex = "1.11.1"
+reqwest = { version = "=0.12.8", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1.0.210", features = ["derive"] }
+serde_json = "1.0.132"
+serde_repr = "0.1.19"
+serial_test = "3.1.1"
+strum = "0.26.3"
+strum_macros = "0.26.4"
+tokio = { version = "1.40.0", features = ["full"] }
+url = "2.5.2"
+uuid = { version = "1.11.0", features = ["v5"] }

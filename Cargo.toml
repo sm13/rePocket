@@ -1,0 +1,19 @@
+[workspace]
+members = ["rePocket", "rePocketAuth"]
+default_members = ["rePocket", "rePocketAuth"]
+resolver = "2"
+
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Damián <damian@mykolab.com>"]
+description = "Tools to access Pocket from a reMarkable"
+edition = "2021"
+
+
+[patch.crates-io]
+# This is necessary so that their version of reqwest also uses rustls-tls
+# instead of native-tls, is unclear why v0.3.0 doesn't have it, but the latest
+# commit on master does. I should consider freezing on a hash, rather than a
+# branch.
+readability = { git = 'https://github.com/kumabook/readability' }

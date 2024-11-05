@@ -1,0 +1,4 @@
+[env]
+CREDS_FILE = { value = "../data/.repocket.key", relative = true }
+CERT_DIR   = { value = "../data/cert", relative = true }
+VERBOSITY = "0"

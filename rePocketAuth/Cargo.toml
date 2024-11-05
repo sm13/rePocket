@@ -1,0 +1,12 @@
+[package]
+name = "rePocketAuth"
+version.workspace = true
+edition.workspace = true
+description = "Pocket Authentication Client for rePocket"
+
+[dependencies]
+io = "0.0.2"
+reqwest = { version = "=0.12.8", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1.0.210", features = ["derive"] }
+tokio = { version = "1.40.0", features = ["full"] }
+warp = { version = "0.3.7", features = ["tls"] }
