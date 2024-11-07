@@ -31,7 +31,7 @@ pub struct PocketItem {
     // Ideally, enum like QBool, or a boolean
     favorite: U8Item,
     // Ideally, enum { default, archived, to_delete }
-    // Note that the returned json has this as a String! 
+    // Note that the returned json has this as a String!
     status: Option<String>,
     excerpt: Option<String>,
     // Ideally, enum like QBool, or a boolean
