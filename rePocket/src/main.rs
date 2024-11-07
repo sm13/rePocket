@@ -14,7 +14,12 @@ use pocketquery::QueryBuilder;
 async fn main() {
     println!("ℹ Starting rePocket");
 
+    // Initialize the "App"
     let mut pocket = Pocket::new();
+    let mut fhandler = FSHandler::load();
+    let _ = fhandler.mkdir_pocket().map_err(|_| { println!("ℹ Skipping, folder file already exists") });
+
+    let since = fhandler.last_query_ts();
 
     let complete_query = QueryBuilder::default()
         .set_state("Unread")
@@ -25,7 +30,7 @@ async fn main() {
         .set_detail_type("Complete")
         //.set_search("learn")
         //.set_domain(".com")
-        .set_since(1711482728)
+        .set_since(since)
         .set_count(10)
         .set_offset(0)
         .set_total(1)
@@ -50,24 +55,24 @@ async fn main() {
     match res {
         Ok(val) => {
             pocket.init(val).await;
+            fhandler.set_last_query_ts(pocket.since());
         },
         Err(err) => println!("🚨 Error {err}"),
     };
 
-    
+
     // OK, so this actually gets us articles, at least from some places, looks like the National
     // Geographic does something weird perhaps. In any case, the HTML has the URl for images, but
     // since the " are scaped they won't load. These are available in the json Pocket returns.
     // Presumably, we can download them using pocket, rename them, and fix the URL in the HTML.
 
 
-    let mut fhandler = FSHandler::load();
-    let _ = fhandler.mkdir_pocket().map_err(|_| { println!("ℹ Skipping, folder file already exists") });
-
     for item in pocket.iter() {
         println!("ℹ Working on item id {:?} with URL\n  ..{:?}", item.get_resolved_id(), item.get_resolved_url());
         fhandler.new_article(&item).await;
     }
+
+    fhandler.save_config();
 
     //if env!("VERBOSITY").parse::<usize>().unwrap() > 0 {
     if env!("VERBOSITY") > "0" {

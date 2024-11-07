@@ -1,6 +1,8 @@
 use serde::{Deserialize, Deserializer};
 use serde_json;
 
+// TODO: Consider this for deletion. Right now it serves more as documentation than anything else,
+// since the only field in use, namely 'since', I actually read it directly in the pocket mod.
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct PocketResponse {
@@ -81,16 +83,6 @@ impl PocketItem {
 }
 
 
-// This would have been amazing, but I just can't have my Trait cake and eat it too.
-//fn from_unsigned<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-//where
-//    D: Deserializer<'de>,
-//    T: Unsigned + std::str::FromStr,
-//{
-//    let s: &str = Deserialize::deserialize(deserializer)?;
-//    let t = T::from_str(&s).map_err(serde::de::Error::custom)?;
-//    Ok(Some(t))
-//}
 
 #[derive(Debug)]
 struct U8Item(Option<u8>);

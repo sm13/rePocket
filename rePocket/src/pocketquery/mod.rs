@@ -71,7 +71,7 @@ pub struct PocketQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
     domain: Option<String>,
     // Although Pocket expects an integer, perhaps we can make it nice, like a DateTime<Local>
-    since: Option<usize>,
+    since: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     count: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -91,7 +91,7 @@ impl PocketQuery {
         detail_type: Option<QDetailType>,
         search: Option<String>,
         domain: Option<String>,
-        since: Option<usize>,
+        since: Option<u64>,
         count: Option<u8>,
         offset: Option<u32>,
         total: Option<QBool>,
@@ -126,7 +126,7 @@ pub struct QueryBuilder {
     detail_type: Option<QDetailType>,
     search: Option<String>,
     domain: Option<String>,
-    since: Option<usize>,
+    since: Option<u64>,
     count: Option<u8>,
     offset: Option<u32>,
     total: Option<QBool>,
@@ -185,7 +185,7 @@ impl QueryBuilder {
     }
 
     // Perhaps timestamp should be of a type similar to whatever the crate chrono uses.
-    pub fn set_since(mut self, timestamp: usize) -> Self {
+    pub fn set_since(mut self, timestamp: u64) -> Self {
         self.since = Some(timestamp);
 
         self

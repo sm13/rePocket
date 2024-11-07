@@ -21,6 +21,7 @@ pub struct Pocket {
     client: reqwest::Client,
     creds: Credentials,
     items_list: Vec<PocketItem>,
+    since: u64,
 }
 
 
@@ -30,13 +31,14 @@ impl Pocket {
             client: reqwest::Client::new(),
             creds: Credentials::new(CREDS_FILE),
             items_list: Vec::new(),
+            since: 0,
         }
     }
 
     pub async fn retrieve(&self, query: &PocketQuery) -> Result<reqwest::Response, reqwest::Error> {
         let     c: serde_json::Value = serde_json::json!(self.creds);
         let mut q: serde_json::Value = serde_json::json!(query);
-        
+
         Self::merge_values_into_hashmap(&mut q, &c);
 
         if env!("VERBOSITY") > "0" {
@@ -79,7 +81,7 @@ impl Pocket {
             },
         }
     }
-    
+
     #[allow(dead_code)]
     pub fn get_urls(&self) -> Option<Vec<String>> {
         let mut urls = Vec::<String>::new();
@@ -98,19 +100,29 @@ impl Pocket {
         }
     }
 
+
+    pub fn since(&self) -> u64 {
+        self.since
+    }
+
+
     fn init_from_json(&mut self, json: serde_json::Value) {
         if env!("VERBOSITY") > "0" {
             println!("🪼 Reached init_from_json()");
             println!("🪼 {:#?}", json["list"]);
+
+            match File::create("response.json") {
+                Ok(mut fh) => {
+                    writeln!(&mut fh, "{:#?}", json).unwrap();
+                },
+                Err(err) => println!("🚨 Error!  {:?}", err),
+            };
         }
 
-        match File::create("response.json") {
-            Ok(mut fh) => {
-                writeln!(&mut fh, "{:#?}", json).unwrap();
-            },
-            Err(err) => println!("🚨 Error!  {:?}", err),
-        };
 
+        // This filed is undocumented, however, it is present in the json. This actually makes it
+        // all easier!
+        self.since = json["since"].as_u64().expect("Expected a timestamp");
 
         let map = serde_json::Map::from(json["list"].as_object().unwrap().clone());
         for (_, v) in map.iter() {

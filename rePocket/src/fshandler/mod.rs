@@ -27,18 +27,21 @@ pub const CONFIG_FILE   : &'static str = env!("CONFIG_FILE_RM");
 #[derive(Clone, Debug, Serialize, Deserialize)]
 // Serialize this into json
 pub struct FSHandler {
-    // Serialize
+    // The UUID of the file representing the Pocket folder
     folder: UniqID,
-    // Serialize
+    // The items currenlty present in the folder
     current_items: BTreeMap<UniqID, u64>,
-    // Serialize
+    // Read and archived items
     archived_items: BTreeMap<UniqID, u64>,
+    // Items corresponding to the query from this run
     #[serde(skip)]
     new_items: BTreeMap<UniqID, u64>,
     // Read, marked to archived, but not archived.
     #[allow(dead_code)]
     #[serde(skip)]
     read_items: BTreeMap<UniqID, u64>,
+    #[serde(default)]
+    ts_last_query: u64,
 }
 
 
@@ -77,6 +80,7 @@ impl FSHandler {
             archived_items: BTreeMap::new(),
             new_items: BTreeMap::new(),
             read_items: BTreeMap::new(),
+            ts_last_query: 0,
         }
     }
 
@@ -113,6 +117,7 @@ impl FSHandler {
     // The config file is really a .json file with this structure:
     // {
     //      "folder": "string",
+    //      "ts_last_query": integer,
     //      "current_items": {
     //          "string" :integer,
     //          ...
@@ -125,23 +130,16 @@ impl FSHandler {
     //      }
     // }
     //
-    #[allow(dead_code)]
     pub fn save_config(&self) {
-        match serde_json::to_string(self) {
-            Ok(json) => {
-                if env!("VERBOSITY") > "0" {
-                    println!("🪼 {:#?}", json);
+        match File::create(CONFIG_FILE) {
+            Ok(fh) => {
+                let buffer = BufWriter::new(fh);
+                match serde_json::to_writer(buffer, self) {
+                    Ok(()) => (),
+                    Err(e) => println!("🚨 Cannot convert string to json! {e}"),
                 }
-                match File::create(CONFIG_FILE) {
-                    Ok(fh) => {
-                        let mut buffer = BufWriter::new(fh);
-                        writeln!(buffer, "{:#?}", json).unwrap();
-                        let _ = buffer.flush();
-                    },
-                    Err(e) => panic!("🚨 Cannot save configuration file! {e}"),
-                }
-            }
-            Err(e) => println!("🚨 Cannot convert string to json! {e}"),
+            },
+            Err(e) => panic!("🚨 Cannot save configuration file! {e}"),
         }
     }
 
@@ -192,6 +190,16 @@ impl FSHandler {
             },
             Err(_) => println!("ℹ {fname} already exists, not rewritting."),
         }
+    }
+
+
+    pub fn last_query_ts(&self) -> u64 {
+        self.ts_last_query
+    }
+
+
+    pub fn set_last_query_ts(&mut self, ts: u64) {
+        self.ts_last_query = ts;
     }
 
 
@@ -362,8 +370,7 @@ impl Content {
 mod tests {
     use super::*;
     use uuid::Version;
-    use std::{fs, thread, time};
-    use serde_json::json;
+    use std::fs;
     use serial_test::serial;
     use std::sync::Once;
 
@@ -410,7 +417,7 @@ mod tests {
     fn load_existing() {
         initialize();
         create_test_config();
-    
+
         let handler = FSHandler::load();
 
         assert_eq!(Some(Version::Random), handler.folder.uuid.get_version());
@@ -428,6 +435,7 @@ mod tests {
         let _ = fs::remove_file(CONFIG_FILE);
         handler.save_config();
 
+        let handler = FSHandler::load();
         assert_eq!(Some(Version::Random), handler.folder.uuid.get_version());
         assert_eq!(handler.current_items.len(), 2);
         assert_eq!(handler.archived_items.len(), 1);
