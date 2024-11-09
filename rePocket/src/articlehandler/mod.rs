@@ -25,13 +25,14 @@ static APP_USER_AGENT: &str = "rePocket/v0.1.0";
 pub struct ArticleHandler<'a> {
     item: &'a PocketItem,
     url: String,
+    is_pdf: bool,
     uuid: Uuid,
     page_title: String,
     article_title: String,
     author: String,
     header: String,
     description: String,
-    content: String,
+    content: Vec<u8>,
     canonical: Option<String>,
 }
 
@@ -42,14 +43,15 @@ impl<'a> ArticleHandler<'a> {
 
         Self {
             item: item,
-            uuid :Uuid::new_v5(&Uuid::NAMESPACE_OID, url.as_bytes()),
             url: url.to_string(),
+            is_pdf: false,
+            uuid :Uuid::new_v5(&Uuid::NAMESPACE_OID, url.as_bytes()),
             page_title: String::new(),
             article_title: String::new(),
             author: String::new(),
             header: String::new(),
             description: String::new(),
-            content: String::new(),
+            content: Vec::<u8>::new(),
             canonical: None,
         }
     }
@@ -66,7 +68,7 @@ impl<'a> ArticleHandler<'a> {
         utils::uuid_to_string(self.uuid)
     }
 
-    pub async fn get_readable(&mut self) -> Result<String, (String, StatusCode)> {
+    pub async fn get_readable(&mut self) -> Result<Vec<u8>, (Vec<u8>, StatusCode)> {
         // Looks like to get responses from some servers it is necessary to include the user_agent()
         let client = reqwest::Client::builder()
             .user_agent(APP_USER_AGENT)
@@ -83,116 +85,136 @@ impl<'a> ArticleHandler<'a> {
                 // TODO: turn these lines into a little function
                 let mut handle = Self::new(p);
                 handle.page_title = "The article domain won't talk to me!".to_string();
-                handle.article_title = "The article domain won't talk to me!".to_string(); 
+                handle.article_title = "The article domain won't talk to me!".to_string();
                 handle.header = "I wonder if I need to try a different approach?".to_string();
-                handle.content = format!("Can't fetch URL: {e}");
+                handle.content = format!("Can't fetch URL: {e}").into();
                 handle.canonical = None;
 
                 (handle.html(), StatusCode::BAD_REQUEST)
-            })?
-            .text()
+            })?;
+
+        // Check the response for content-type, and treat PDF differently.
+        if body.headers()["content-type"] == "application/pdf" {
+            let body = body.bytes()
+                .await
+                .map_err(move |e| {
+                let mut handle = Self::new(p);
+                handle.page_title = "I can't get the text for you!".to_string();
+                handle.article_title = "I can't get the text for you!".to_string();
+                handle.header = "Couldn't render article. (It is an article, right?)".to_string();
+                handle.content = format!("Can't fetch response body text: {e}").into();
+                handle.canonical = None;
+
+                (handle.html(), StatusCode::BAD_REQUEST)
+            })?;
+
+            self.is_pdf = true;
+            self.content = body.to_vec();
+
+            Ok(body.to_vec())
+
+        } else {
+            // TODO:
+            // 1) Make this a function?
+            // 2) Can I move all the map_err to a single location? This is waaay toooo loooong
+            let body = body.text()
             .await
             .map_err(move |e| {
                 let mut handle = Self::new(p);
                 handle.page_title = "I can't get the text for you!".to_string();
-                handle.article_title = "I can't get the text for you!".to_string(); 
+                handle.article_title = "I can't get the text for you!".to_string();
                 handle.header = "Couldn't render article. (It is an article, right?)".to_string();
-                handle.content = format!("Can't fetch response body text: {e}");
+                handle.content = format!("Can't fetch response body text: {e}").into();
                 handle.canonical = None;
 
                 (handle.html(), StatusCode::BAD_REQUEST)
             })?;
 
-        let url = Url::parse(&self.url).unwrap();
-        let (content, meta) = readable_readability::Readability::new().base_url(Some(url.clone())).parse(&body);
-        let mut content_bytes = vec![];
+            let url = Url::parse(&self.url).unwrap();
+            let (content, meta) = readable_readability::Readability::new().base_url(Some(url.clone())).parse(&body);
+            let mut content_bytes = vec![];
 
-        
-        content.serialize(&mut content_bytes)
+
+            content.serialize(&mut content_bytes)
+                .map_err(move |e| {
+                    let mut handle = Self::new(p);
+                    handle.page_title = "I just can't deal with this!".to_string();
+                    handle.article_title = "I just can't deal with this!".to_string();
+                    handle.header = "Couldn't extract content form the article. (It is an article, right?)".to_string();
+                    handle.content = format!("Can't serialize content: {e}").into();
+                    handle.canonical = None;
+
+                    (handle.html(), StatusCode::BAD_REQUEST)
+                })?;
+
+
+            self.content = content_bytes;
+
+
+            self.header = format!(
+                "A rePocket-able version of <a class=\"shortened\" href=\"{url}\">{url}</a><br />Retrieved on {}",
+                Self::now_string()
+            );
+
+            // If some fields are missing fill them with some defaults.
+            self.author = meta.byline.unwrap_or_else(|| "Unknown".into());
+            self.page_title = meta.page_title.unwrap_or_else(|| "Page".into());
+            self.article_title = meta.article_title.unwrap_or_else(|| "Article".into());
+            self.description = meta.description.unwrap_or_else(|| "Description".into());
+            self.canonical = Some(url.to_string());
+
+
+            // Some websites appear empty or very short using readable::readability.
+            // Thus, also obtain them with readability::extractor to choose the best one.
+            // What "best" means is open to interpretation, for the time being, longer is better.
+            let blocking_url = url.clone();
+
+            let body = tokio::task::spawn_blocking(move || {
+                match readability::extractor::scrape(&blocking_url.to_string()) {
+                    Ok(body) => body,
+                    Err(e)   => readability::extractor::Product {
+                        title: "readability::extractor didn't work".to_string(),
+                        content: format!("<p>readability::extractor didn't work: {e}</p>"),
+                        text: format!("readability::extractor didn't work: {e}"),
+                    },
+                }
+            }).await
             .map_err(move |e| {
                 let mut handle = Self::new(p);
                 handle.page_title = "I just can't deal with this!".to_string();
-                handle.article_title = "I just can't deal with this!".to_string(); 
+                handle.article_title = "I just can't deal with this!".to_string();
                 handle.header = "Couldn't extract content form the article. (It is an article, right?)".to_string();
-                handle.content = format!("Can't serialize content: {e}");
+                handle.content = format!("Can't serialize content: {e}").into();
                 handle.canonical = None;
 
                 (handle.html(), StatusCode::BAD_REQUEST)
             })?;
 
-
-        self.content = std::str::from_utf8(&content_bytes)
-            .map_err(move |e| {
-                let mut handle = Self::new(p);
-                handle.page_title = "I give up...".to_string();
-                handle.article_title = "I give up...".to_string(); 
-                handle.header = "Invalid UTF-8 in article content".to_string();
-                handle.content = format!("Can't serialize content: {e}");
-                handle.canonical = None;
-
-                (handle.html(), StatusCode::BAD_REQUEST)
-            })?
-            .to_string();
-
-        self.header = format!(
-            "A rePocket-able version of <a class=\"shortened\" href=\"{url}\">{url}</a><br />Retrieved on {}",
-            Self::now_string()
-        );
-
-        // If some fields are missing fill them with some defaults.
-        self.author = meta.byline.unwrap_or_else(|| "Unknown".into());
-        self.page_title = meta.page_title.unwrap_or_else(|| "Page".into());
-        self.article_title = meta.article_title.unwrap_or_else(|| "Article".into());
-        self.description = meta.description.unwrap_or_else(|| "Description".into());
-        self.canonical = Some(url.to_string());
-
-
-        // Some websites appear empty or very short using readable::readability.
-        // Thus, also obtain them with readability::extractor to choose the best one.
-        // What "best" means is open to interpretation, for the time being, longer is better.
-        let blocking_url = url.clone();
-
-        let body = tokio::task::spawn_blocking(move || {
-            match readability::extractor::scrape(&blocking_url.to_string()) {
-                Ok(body) => body,
-                Err(e)   => readability::extractor::Product {
-                    title: "readability::extractor didn't work".to_string(), 
-                    content: format!("<p>readability::extractor didn't work: {e}</p>"),
-                    text: format!("readability::extractor didn't work: {e}"),
-                }, 
+            if body.content.len() > self.content.len() {
+                println!("ℹ Modifying content from readable's readability to readability's extractor");
+                self.content = body.content.into();
             }
-        }).await
-        .map_err(move |e| {
-            let mut handle = Self::new(p);
-            handle.page_title = "I just can't deal with this!".to_string();
-            handle.article_title = "I just can't deal with this!".to_string(); 
-            handle.header = "Couldn't extract content form the article. (It is an article, right?)".to_string();
-            handle.content = format!("Can't serialize content: {e}");
-            handle.canonical = None;
 
-            (handle.html(), StatusCode::BAD_REQUEST)
-        })?;
+            self.content = Self::cleanup_html(&self.content.clone());
 
-        if body.content.len() > self.content.len() {
-            println!("ℹ Modifying content from readable's readability to readability's extractor");
-            self.content = body.content;
+            Ok(self.html())
         }
-
-        self.content = Self::cleanup_html(&self.content.clone());
-
-        Ok(self.html())
     }
 
 
     pub async fn save_file(&mut self, file_type: &str, path: &str) {
         // TODO: This should probably return a -> Result<(), Error>
-        let ftype = match file_type {
+        let res = self.get_readable().await;
+
+        let mut ftype = match file_type {
             "epub" | "pdf" | "html" => file_type,
             // Default to epub, just because
             _ => "epub",
         };
 
-        let res = self.get_readable().await;
+        if self.is_pdf {
+            ftype = "pdf";
+        }
 
         match res {
             Ok(article) => {
@@ -203,17 +225,20 @@ impl<'a> ArticleHandler<'a> {
                                 let _ = fh.write_all(&self.epub());
                             },
                             "html" => {
-                                let _ = fh.write_all(&article.as_bytes());
+                                let _ = fh.write_all(&article);
                             },
+                            "pdf" => {
+                                let _ = fh.write_all(&self.content);
+                            }
                             _ => {
-                                println!("ℹ Not saving file! Only \"pdf\" and \"epub\" supported");
+                                println!("ℹ Not saving file! Only \"pdf\", \"html\" and \"epub\" supported");
                             },
                         }
                     },
-                    Err(err) => println!("🚨 Error creating file!  {:?}", err),
+                    Err(err) => println!("🚨 Error creating file! {:?}", err),
                 }
             },
-            Err(err) => println!("🚨 Error getting readable  {:?}", err),
+            Err(err) => println!("🚨 Error getting readable {:?}", err),
         }
     }
 
@@ -225,11 +250,11 @@ impl<'a> ArticleHandler<'a> {
         builder.metadata("author", format!("{}", self.author)).unwrap();
         builder.metadata("description", format!("{}", self.description)).unwrap();
         builder.epub_version(epub_builder::EpubVersion::V30);
-        builder.add_content(epub_builder::EpubContent::new("article.xhtml", self.html().as_bytes())
+        builder.add_content(epub_builder::EpubContent::new("article.xhtml", self.html().as_slice())
             .title(format!("{}", self.article_title))
             .reftype(epub_builder::ReferenceType::Text)).unwrap();
         //builder.add_cover_image().unwrap();
-    
+
         let mut epub: Vec<u8> = vec!();
 
         match builder.generate(&mut epub) {
@@ -241,13 +266,13 @@ impl<'a> ArticleHandler<'a> {
     }
 
 
-    fn html(&self) -> String {
+    fn html(&self) -> Vec<u8> {
         let template = include_str!("../../data/template.html");
         let mut output = template
             .replace("{{page_title}}", &self.page_title)
             .replace("{{article_title}}", &self.article_title)
             .replace("{{header}}", &self.header)
-            .replace("{{content}}", &self.content);
+            .replace("{{content}}", &String::from_utf8(self.content.clone()).unwrap());
 
         if let Some(canonical) = &self.canonical {
             output = output.replace(
@@ -258,7 +283,7 @@ impl<'a> ArticleHandler<'a> {
             output = output.replace("{{canonical}}", "");
         }
 
-        output
+        output.into()
     }
 
 
@@ -268,14 +293,16 @@ impl<'a> ArticleHandler<'a> {
     //
     // Certain things need a different approach. Unfortunately, for this I'm down to string
     // substitution and regexes. I know, I know, ...
-    fn cleanup_html(html: &str) -> String {
+    fn cleanup_html(html: &Vec<u8>) -> Vec<u8> {
         // TODO: When implementing pictures in the epubs, either substitute the photos
         // for the alt text, or download the photos and add relative links. Either way,
         // this will probably have to go.
+        let dirty = &String::from_utf8(html.to_vec()).unwrap();
+
         let output = ammonia::Builder::default()
             .rm_tags(&["div"])
             .rm_tag_attributes("img", &["alt"])
-            .clean(html)
+            .clean(dirty)
             .to_string();
 
         let re = Regex::new(r"<img(.*?)>").unwrap();
