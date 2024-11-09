@@ -1,4 +1,6 @@
 use std::{
+    error,
+    fmt,
     include_str,
     time::Duration,
     fs::File,
@@ -19,7 +21,17 @@ use epub_builder::{
 use crate::pocketitem::PocketItem;
 use crate::utils;
 
-static APP_USER_AGENT: &str = "rePocket/v0.1.0";
+static APP_USER_AGENT: &str = "rePocket/v0.2.0";
+
+
+#[derive(Debug)]
+enum Error {
+    IO(std::io::Error),
+    Reqwest(reqwest::Error),
+    Readability(readability::error::Error),
+    Tokio(tokio::task::JoinError),
+}
+
 
 #[derive(Clone)]
 pub struct ArticleHandler<'a> {
@@ -81,32 +93,13 @@ impl<'a> ArticleHandler<'a> {
             .get(self.url.clone())
             .send()
             .await
-            .map_err(move |e| {
-                // TODO: turn these lines into a little function
-                let mut handle = Self::new(p);
-                handle.page_title = "The article domain won't talk to me!".to_string();
-                handle.article_title = "The article domain won't talk to me!".to_string();
-                handle.header = "I wonder if I need to try a different approach?".to_string();
-                handle.content = format!("Can't fetch URL: {e}").into();
-                handle.canonical = None;
-
-                (handle.html(), StatusCode::BAD_REQUEST)
-            })?;
+            .map_err(move |e| { Self::error_html(p, Error::Reqwest(e)) })?;
 
         // Check the response for content-type, and treat PDF differently.
         if body.headers()["content-type"] == "application/pdf" {
             let body = body.bytes()
                 .await
-                .map_err(move |e| {
-                let mut handle = Self::new(p);
-                handle.page_title = "I can't get the text for you!".to_string();
-                handle.article_title = "I can't get the text for you!".to_string();
-                handle.header = "Couldn't render article. (It is an article, right?)".to_string();
-                handle.content = format!("Can't fetch response body text: {e}").into();
-                handle.canonical = None;
-
-                (handle.html(), StatusCode::BAD_REQUEST)
-            })?;
+                .map_err(move |e| { Self::error_html(p, Error::Reqwest(e)) })?;
 
             self.is_pdf = true;
             self.content = body.to_vec();
@@ -119,37 +112,16 @@ impl<'a> ArticleHandler<'a> {
             // 2) Can I move all the map_err to a single location? This is waaay toooo loooong
             let body = body.text()
             .await
-            .map_err(move |e| {
-                let mut handle = Self::new(p);
-                handle.page_title = "I can't get the text for you!".to_string();
-                handle.article_title = "I can't get the text for you!".to_string();
-                handle.header = "Couldn't render article. (It is an article, right?)".to_string();
-                handle.content = format!("Can't fetch response body text: {e}").into();
-                handle.canonical = None;
-
-                (handle.html(), StatusCode::BAD_REQUEST)
-            })?;
+            .map_err(move |e| { Self::error_html(p, Error::Reqwest(e)) })?;
 
             let url = Url::parse(&self.url).unwrap();
             let (content, meta) = readable_readability::Readability::new().base_url(Some(url.clone())).parse(&body);
             let mut content_bytes = vec![];
 
-
             content.serialize(&mut content_bytes)
-                .map_err(move |e| {
-                    let mut handle = Self::new(p);
-                    handle.page_title = "I just can't deal with this!".to_string();
-                    handle.article_title = "I just can't deal with this!".to_string();
-                    handle.header = "Couldn't extract content form the article. (It is an article, right?)".to_string();
-                    handle.content = format!("Can't serialize content: {e}").into();
-                    handle.canonical = None;
-
-                    (handle.html(), StatusCode::BAD_REQUEST)
-                })?;
-
+                .map_err(move |e| { Self::error_html(p, Error::IO(e)) })?;
 
             self.content = content_bytes;
-
 
             self.header = format!(
                 "A rePocket-able version of <a class=\"shortened\" href=\"{url}\">{url}</a><br />Retrieved on {}",
@@ -179,16 +151,7 @@ impl<'a> ArticleHandler<'a> {
                     },
                 }
             }).await
-            .map_err(move |e| {
-                let mut handle = Self::new(p);
-                handle.page_title = "I just can't deal with this!".to_string();
-                handle.article_title = "I just can't deal with this!".to_string();
-                handle.header = "Couldn't extract content form the article. (It is an article, right?)".to_string();
-                handle.content = format!("Can't serialize content: {e}").into();
-                handle.canonical = None;
-
-                (handle.html(), StatusCode::BAD_REQUEST)
-            })?;
+            .map_err(move |e| { Self::error_html(p, Error::Tokio(e)) })?;
 
             if body.content.len() > self.content.len() {
                 println!("ℹ Modifying content from readable's readability to readability's extractor");
@@ -199,6 +162,19 @@ impl<'a> ArticleHandler<'a> {
 
             Ok(self.html())
         }
+    }
+
+
+    fn error_html(item: &'a PocketItem, e: Error) -> (Vec<u8>, StatusCode) {
+        // TODO: turn these lines into a little function
+        let mut handle = Self::new(item);
+        handle.page_title = "rePocket Failed!".to_string();
+        handle.article_title = "".to_string();
+        handle.header = "Could not get the article contents".to_string();
+        handle.content = format!("Could not get the article contents. Reason:\n{e}").into();
+        handle.canonical = None;
+
+        (handle.html(), StatusCode::BAD_REQUEST)
     }
 
 
@@ -322,4 +298,37 @@ impl<'a> ArticleHandler<'a> {
         let now = chrono::Local::now();
         now.format("%Y.%B.%e, %T").to_string()
     }
+}
+
+
+impl fmt::Display for Error {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{:?}", self)
+  }
+}
+
+impl error::Error for Error { }
+
+impl From<std::io::Error> for Error {
+  fn from(error: std::io::Error) -> Self {
+    Error::IO(error)
+  }
+}
+
+impl From<reqwest::Error> for Error {
+  fn from(error: reqwest::Error) -> Self {
+    Error::Reqwest(error)
+  }
+}
+
+impl From<readability::error::Error> for Error {
+  fn from(error: readability::error::Error) -> Self {
+    Error::Readability(error)
+  }
+}
+
+impl From<tokio::task::JoinError> for Error {
+  fn from(error: tokio::task::JoinError) -> Self {
+    Error::Tokio(error)
+  }
 }
