@@ -10,6 +10,7 @@ use std::fs::File;
 use std::io::Write;
 
 const GET_MURL: &'static str = "https://getpocket.com/v3/get";
+const MOD_MURL: &'static str = "https://getpocket.com/v3/send";
 
 #[cfg(not(target_abi = "eabihf"))]
 const CREDS_FILE: &'static str = env!("CREDS_FILE_HOST");
@@ -57,7 +58,7 @@ impl Pocket {
     // Also, substitute the () output for something proper, like Result<_, Error>
     pub async fn init(&mut self, val: reqwest::Response) {
         if env!("VERBOSITY") > "0" {
-            println!("🪼 Reached init()");
+            println!("🪼 Reached init() with status {}", val.status());
         }
         match val.status() {
             StatusCode::OK => {
@@ -81,6 +82,61 @@ impl Pocket {
             },
         }
     }
+
+
+    // Archive one or more items.
+    pub async fn archive(&self, items: Vec<u64>) -> Result<reqwest::Response, reqwest::Error> {
+        // In the Pocket API, actions is a JSON array of "actions", not confusing at all. Anyways,
+        // what that means is that each "action" must have at least 2 fields "action": "archive"
+        // and the "item_id": _integer_.
+
+        // For this to work, we need a Value -> Object(Map<String, Value>)
+        // The Hash map should be:
+        // "actions": [Array]
+        // Each array item is:
+        // {
+        //      "action": "archive"
+        //      "item_id": integer
+        // }
+        // Thus, create a vector of Strings!
+        let mut actions: Vec<String> = Vec::<String>::new();
+
+        for id in items {
+            actions.push(format!(r#"{{"action": "archive", "item_id": {}}}"#, id));
+        }
+
+        // Join all entries of the vector into a single String
+        let actions = actions.join(",");
+        let actions = actions.trim_end_matches(",");
+        let actions = "[".to_string() + actions + "]";
+        let actions: serde_json::Value = serde_json::from_str(&actions).unwrap();
+        let mut actions: serde_json::Value = serde_json::json!({"actions": actions});
+        let c: serde_json::Value = serde_json::json!(self.creds);
+        Self::merge_values_into_hashmap(&mut actions, &c);
+
+        let msg = self.client.post(MOD_MURL)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .json(&actions);
+
+        msg.send().await
+    }
+
+
+    // Add one or more tags to an item.
+    pub async fn add_tag(&self, item: u64, tags: Vec<String>) -> Result<reqwest::Response, reqwest::Error> {
+        let tags: serde_json::Value = serde_json::json!({"action": "tags_add", "item_id": item, "tags": tags.join(",")});
+        let mut actions: serde_json::Value = serde_json::json!({"actions": [tags]});
+        let c: serde_json::Value = serde_json::json!(self.creds);
+
+        Self::merge_values_into_hashmap(&mut actions, &c);
+
+        let msg = self.client.post(MOD_MURL)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .json(&actions);
+
+        msg.send().await
+    }
+
 
     #[allow(dead_code)]
     pub fn get_urls(&self) -> Option<Vec<String>> {
@@ -134,7 +190,7 @@ impl Pocket {
     }
 
 
-    // Take 2 serde_json::Value and return a HashMap for a reqwest.json()
+    // Take 2 serde_json::Value and modify the first argument to return a merged HashMap
     fn merge_values_into_hashmap(vj: &mut serde_json::Value, wj: &serde_json::Value) {
         let n = wj.as_object().unwrap();
         let m = vj.as_object_mut().unwrap();

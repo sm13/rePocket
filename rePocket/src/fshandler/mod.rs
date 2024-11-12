@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map};
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::io::{BufWriter, Write};
+use std::io::{BufReader, BufWriter, Write};
 use std::fs::read;
 use std::fs::File;
 use std::str;
@@ -29,12 +29,15 @@ pub const CONFIG_FILE   : &'static str = env!("CONFIG_FILE_RM");
 pub struct FSHandler {
     // The UUID of the file representing the Pocket folder
     folder: UniqID,
+    // The UUID of the file representing the Pocket/Archive folder
+    #[serde(default)]
+    archive: UniqID,
     // The items currenlty present in the folder
     current_items: BTreeMap<UniqID, u64>,
     // Read and archived items
     archived_items: BTreeMap<UniqID, u64>,
-    // Items corresponding to the query from this run
-    #[serde(skip)]
+    // Items corresponding to the query from the most recent run
+    #[serde(default)]
     new_items: BTreeMap<UniqID, u64>,
     // Read, marked to archived, but not archived.
     #[allow(dead_code)]
@@ -58,10 +61,13 @@ pub struct FSHandler {
 // /home/root/**/XOCHITL_ROOT/Pocket/.
 //                                   ├── Article1.epub
 //                                   ├── Article2.epub
-//                                   └── Article3.epub
+//                                   └── Archive
+//                                       └── Article3.epub
 //
 // Which really looks like this:
 // XOCHITL_ROOT/.
+//              ├── archive-uuid.content
+//              ├── archive-uuid.meta
 //              ├── folder-uuid.content
 //              ├── folder-uuid.meta
 //              ├── Article1-uuid.epub
@@ -76,6 +82,7 @@ impl FSHandler {
     pub fn new() -> Self {
         Self {
             folder: UniqID::new(),
+            archive: UniqID::new(),
             current_items: BTreeMap::new(),
             archived_items: BTreeMap::new(),
             new_items: BTreeMap::new(),
@@ -91,14 +98,17 @@ impl FSHandler {
         match config {
             Ok(data) => {
                 // Create a Self from the data.
-                let loaded : Self = serde_json::from_slice(&data).unwrap();
+                let mut loaded : Self = serde_json::from_slice(&data).unwrap();
 
                 // TODO: Call consolidate() (perhaps this is the action that we can trigger manually?)
+                loaded.consolidate();
+
                 loaded
             },
             Err(_) => {
                 // otherwise, call new()
                 let new = Self::new();
+
                 // call to create the pocket folder
                 let res = new.mkdir_pocket();
 
@@ -117,6 +127,7 @@ impl FSHandler {
     // The config file is really a .json file with this structure:
     // {
     //      "folder": "string",
+    //      "archive": "string",
     //      "ts_last_query": integer,
     //      "current_items": {
     //          "string" :integer,
@@ -145,15 +156,26 @@ impl FSHandler {
 
 
     pub fn mkdir_pocket(&self) -> Result<(), std::io::Error> {
+        // Pocket directory:
+        let pocket_res = self.mkdir(&self.parent_uuid_string(), "Pocket", "");
+
+        // Pocket/Archive directory:
+        self.mkdir(&self.archive_uuid_string(), "Archive", &self.parent_uuid_string())?;
+
+        pocket_res
+    }
+
+
+    fn mkdir(&self, uuid: &str, name: &str, parent: &str) -> Result<(), std::io::Error> {
         // Create a file with the new UUID
-        let fname_content: String = XOCHITL_ROOT.to_string() + "/" + &self.uuid_string() + ".content";
+        let fname_content: String = XOCHITL_ROOT.to_string() + "/" + uuid + ".content";
         let mut fh = File::create_new(fname_content)?;
         writeln!(fh, "{{}}")?;
 
         // Create the metadatafile
-        let metadata = Metadata::new("CollectionType", "Pocket", "");
+        let metadata = Metadata::new("CollectionType", name, parent);
         let json = metadata.json()?;
-        let fname_meta = XOCHITL_ROOT.to_string() + "/" + &self.uuid_string() + ".metadata";
+        let fname_meta = XOCHITL_ROOT.to_string() + "/" + uuid + ".metadata";
         let mut fh = File::create_new(fname_meta)?;
         writeln!(fh, "{}", json)?;
 
@@ -173,7 +195,7 @@ impl FSHandler {
 
         // Create the metadata file
         let fname_meta = XOCHITL_ROOT.to_string() + "/" + &article.uuid_string() + ".metadata";
-        let metadata = Metadata::new("DocumentType", &article.title(), &self.uuid_string());
+        let metadata = Metadata::new("DocumentType", &article.title(), &self.parent_uuid_string());
         Self::write_file(&fname_meta, &metadata);
 
         // Add the article to the self.new_items
@@ -203,18 +225,82 @@ impl FSHandler {
     }
 
 
-    #[allow(dead_code)]
-    pub fn consolidate(&self) {
+    pub fn read_ids(&self) -> btree_map::IntoValues<UniqID, u64> {
+        self.read_items.clone().into_values()
+    }
+
+
+    pub fn consolidate(&mut self) {
+        // The first issue needing consolidation is the introduction of the "archive" folder.
+        // Since it is a new field, it may not be loaded from the config file. If that's the case,
+        // force a proper UUID.
+        if self.archive.uuid.is_nil() {
+            self.archive = UniqID::new();
+        }
+
         // Go through the list of current items:
         // - If the files is missing, then archive in pocket
         // - If the files exist, but the metadata indicates 'deleted', then archive in pocket
         // - Otherwise it's all good.
-        unimplemented!();
+        for (uid, apid) in self.current_items.clone() {
+            let fname = XOCHITL_ROOT.to_string() + "/" + &utils::uuid_to_string(uid.uuid) + ".metadata";
+            let metadata = Metadata::load(&fname);
+
+            if metadata.parent != self.parent_uuid_string() {
+                // That is, it is one of:
+                // - self.archive_uuid_string()
+                // - "trash"
+                // - it was moved somewhere else
+
+                // Move item from current list to read list.
+                if let Some(val) = self.current_items.remove(&uid) {
+                    // Only archive those moved to the archive folder, otherwise assume that the
+                    // user is intentionally breaking syncing with Pocket.
+                    if metadata.parent == self.archive_uuid_string() {
+                        self.read_items.insert(uid.clone(), val);
+                        println!("ℹ Moved item with uuid {} into the read_items list", &utils::uuid_to_string(uid.uuid));
+                    }
+                }
+            }
+        }
+
+        // Then move the new items to the current items list.
+        for (uid, apid) in self.new_items.clone() {
+            if let Some(val) = self.new_items.remove(&uid) {
+                self.current_items.insert(uid.clone(), val);
+                println!("ℹ Moved item with uuid {} into the current_items list", &utils::uuid_to_string(uid.uuid));
+            }
+        }
     }
 
 
-    pub fn uuid_string(&self) -> String {
+    pub fn parent_uuid_string(&self) -> String {
         utils::uuid_to_string(self.folder.uuid)
+    }
+
+
+    pub fn archive_uuid_string(&self) -> String {
+        utils::uuid_to_string(self.archive.uuid)
+    }
+
+
+    pub fn clear_read(&mut self) {
+        // Move items to the trash in Xochitl, then clear the btreemap
+        for (uid, _) in self.read_items.clone() {
+            let fname = XOCHITL_ROOT.to_string() + "/" + &utils::uuid_to_string(uid.uuid) + ".metadata";
+            let mut metadata = Metadata::load(&fname);
+
+            // "Move" the item to the trash.
+            metadata.parent = "trash".to_string();
+            // Rewrite the file.
+            Self::write_file(&fname, &metadata);
+
+            // Remove the item from the read list.
+            if let Some(val) = self.read_items.remove(&uid) {
+                self.archived_items.insert(uid.clone(), val);
+                println!("ℹ Archived item with uuid {}", &utils::uuid_to_string(uid.uuid));
+            }
+        }
     }
 }
 
@@ -260,23 +346,23 @@ impl<'de> Deserialize<'de> for UniqID {
 }
 
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Metadata {
     deleted: bool,
-    #[serde(rename(serialize = "lastModified"))]
-    last_modified: u64,
-    #[serde(rename(serialize = "lastOpenedPage"))]
+    #[serde(rename = "lastModified")]
+    last_modified: String,
+    #[serde(rename = "lastOpenedPage")]
     last_opened_page: u64,
-    #[serde(rename(serialize = "metadatamodified"))]
+    #[serde(rename = "metadatamodified")]
     metadata_modified: bool,
     modified: bool,
     parent: String,
     pinned: bool,
     synced: bool,
-    #[serde(rename(serialize = "type"))]
+    #[serde(rename = "type")]
     dtype: String,
     version: u64,
-    #[serde(rename(serialize = "visibleName"))]
+    #[serde(rename = "visibleName")]
     visible_name: String,
 }
 
@@ -288,11 +374,11 @@ impl Metadata {
      ) -> Self {
         let start = SystemTime::now();
         let since_epoch = start.duration_since(UNIX_EPOCH).expect("🚨 Time went backwards");
-        let last_modified = since_epoch.as_secs();
+        let last_modified = since_epoch.as_millis();
 
         Self {
             deleted: false,
-            last_modified: last_modified,
+            last_modified: last_modified.to_string(),
             last_opened_page: 0,
             metadata_modified: false,
             modified: false,
@@ -304,6 +390,19 @@ impl Metadata {
             visible_name: name.to_string(),
         }
     }
+
+
+    pub fn load(fname: &str) -> Self {
+        // Open the file in read-only mode with buffer.
+        let fh = File::open(fname).expect(&format!("Couldn't open metadata file {}", fname));
+        let reader = BufReader::new(fh);
+
+        // Read the JSON contents of the file as an instance of `User`.
+        let metadata = serde_json::from_reader(reader).expect("Couldn't parse JSON from buffer");
+
+        metadata
+    }
+
 
     pub fn json(&self) -> serde_json::Result<String> {
         serde_json::to_string(self)

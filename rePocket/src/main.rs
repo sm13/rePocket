@@ -9,6 +9,7 @@ use pocket::Pocket;
 use fshandler::FSHandler;
 use pocketquery::QueryBuilder;
 
+use reqwest::StatusCode;
 
 #[tokio::main]
 async fn main() {
@@ -24,8 +25,8 @@ async fn main() {
     let complete_query = QueryBuilder::default()
         .set_state("Unread")
         .set_favorite(0)
-        //.set_tag("rust")
-        .set_content_type("Article")
+        //.set_tag("pdf")
+        //.set_content_type("Article")
         .set_sort("Newest")
         .set_detail_type("Complete")
         //.set_search("learn")
@@ -57,7 +58,7 @@ async fn main() {
             pocket.init(val).await;
             fhandler.set_last_query_ts(pocket.since());
         },
-        Err(err) => println!("🚨 Error {err}"),
+        Err(e) => println!("🚨 Error {e}"),
     };
 
 
@@ -72,9 +73,38 @@ async fn main() {
         fhandler.new_article(&item).await;
     }
 
+    // Archive all the items in the Read folder
+    let ids : Vec<u64> = fhandler.read_ids().collect();
+
+    if !ids.is_empty() {
+        let res = pocket.archive(ids.clone()).await;
+
+        // TODO: When proper error handling is implemented, this could be absorved by archive() and
+        // dealt with over there. Returning error unless we get a 200 response.
+        match res {
+            Ok(val) => {
+                let status = val.status();
+                match status.clone() {
+                    StatusCode::OK => {
+                        // Tag all items
+                        for id in fhandler.read_ids() {
+                            println!("ℹ Tagging item id {:?} with tag 'repocket'", id);
+                            let res = pocket.add_tag(id, vec!["repocket".to_string()]).await;
+                        }
+
+                        // Remove all items form the read_items entry in the FSHandler.
+                        fhandler.clear_read();
+                    },
+                    _ => println!("🚨 Error, archive() returned with status {:?}", status),
+                }
+            },
+            Err(e) =>  println!("🚨 Error {e}"),
+        }
+    }
+
     fhandler.save_config();
 
-    //if env!("VERBOSITY").parse::<usize>().unwrap() > 0 {
+
     if env!("VERBOSITY") > "0" {
         println!("ℹ {:#?}", fhandler);
     }

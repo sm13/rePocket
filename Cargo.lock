@@ -1790,7 +1790,7 @@ dependencies = [
 
 [[package]]
 name = "rePocket"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ammonia",
  "chrono",
@@ -1812,7 +1812,7 @@ dependencies = [
 
 [[package]]
 name = "rePocketAuth"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "io",
  "reqwest 0.12.8",
