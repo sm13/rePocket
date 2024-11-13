@@ -4,7 +4,7 @@ Another reMarkable native application to ~~sync~~ download the latest articles f
 
 ## Current Features
 
-* Downloads the latest 10 _articles_ since the previous request
+* Downloads the latest 10 _articles_ since the previous request. Articles will include _some_ images!
 
 * Archive articles in Pocket by moving them to the folder Pocket/Archive in the reMarkable. Syncs when running rePocket!
 
@@ -13,8 +13,6 @@ Another reMarkable native application to ~~sync~~ download the latest articles f
 * The installation should be impervious to reMarkable updates
 
 ## Future Features
-
-* Adding images to the articles
 
 For a full list visit registered [enhancements](https://github.com/sm13/rePocket/labels/enhancement)
 

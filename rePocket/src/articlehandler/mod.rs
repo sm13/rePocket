@@ -2,6 +2,7 @@ use std::{
     error,
     fmt,
     include_str,
+    collections::HashSet,
     time::Duration,
     fs::File,
     io::Write,
@@ -28,6 +29,7 @@ static APP_USER_AGENT: &str = "rePocket/v0.2.0";
 enum Error {
     IO(std::io::Error),
     Reqwest(reqwest::Error),
+    HeaderToStr(reqwest::header::ToStrError),
     Readability(readability::error::Error),
     Tokio(tokio::task::JoinError),
 }
@@ -46,6 +48,7 @@ pub struct ArticleHandler<'a> {
     description: String,
     content: Vec<u8>,
     canonical: Option<String>,
+    images: HashSet<String>,
 }
 
 
@@ -65,6 +68,7 @@ impl<'a> ArticleHandler<'a> {
             description: String::new(),
             content: Vec::<u8>::new(),
             canonical: None,
+            images: Self::image_list(item),
         }
     }
 
@@ -158,11 +162,34 @@ impl<'a> ArticleHandler<'a> {
                 self.content = body.content.into();
             }
 
-            self.content = Self::cleanup_html(&self.content.clone());
+            self.content = self.cleanup_html(&self.content.clone());
 
             Ok(self.html())
         }
     }
+
+
+    async fn get_image(url: &str) -> Result<(Vec<u8>, String), Error> {
+        let client = reqwest::Client::builder()
+            .user_agent(APP_USER_AGENT)
+            .timeout(Duration::new(30, 0))
+            .build();
+
+        let body = client.expect("🚨 Cannot open reqwest client")
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| { Error::Reqwest(e) })?;
+
+        let mime_type = body.headers()["content-type"].to_str()?.to_string();
+
+        let body = body.bytes()
+            .await
+            .map_err(|e| { Error::Reqwest(e) })?;
+
+        Ok((body.to_vec(), mime_type))
+    }
+
 
 
     fn error_html(item: &'a PocketItem, e: Error) -> (Vec<u8>, StatusCode) {
@@ -198,7 +225,7 @@ impl<'a> ArticleHandler<'a> {
                     Ok(mut fh) => {
                         match ftype {
                             "epub" => {
-                                let _ = fh.write_all(&self.epub());
+                                let _ = fh.write_all(&self.epub().await);
                             },
                             "html" => {
                                 let _ = fh.write_all(&article);
@@ -219,7 +246,7 @@ impl<'a> ArticleHandler<'a> {
     }
 
 
-    fn epub(&self) -> Vec<u8> {
+    async fn epub(&self) -> Vec<u8> {
         let mut builder = EpubBuilder::new(ZipLibrary::new().unwrap()).unwrap();
 
         builder.metadata("title", format!("{}", self.article_title)).unwrap();
@@ -229,6 +256,21 @@ impl<'a> ArticleHandler<'a> {
         builder.add_content(epub_builder::EpubContent::new("article.xhtml", self.html().as_slice())
             .title(format!("{}", self.article_title))
             .reftype(epub_builder::ReferenceType::Text)).unwrap();
+
+        // Add images.
+        for img in &self.images {
+            let res = Self::get_image(&img).await;
+
+            let (bin, mime_type) = res.expect("Expected bin and mime_type");
+
+            let split_url = img.rsplit_once("/");
+
+            if let Some((pre, suff)) = split_url {
+                builder.add_resource(suff, &*bin, mime_type).unwrap();
+            }
+        }
+
+        // Add cover image?
         //builder.add_cover_image().unwrap();
 
         let mut epub: Vec<u8> = vec!();
@@ -269,7 +311,7 @@ impl<'a> ArticleHandler<'a> {
     //
     // Certain things need a different approach. Unfortunately, for this I'm down to string
     // substitution and regexes. I know, I know, ...
-    fn cleanup_html(html: &Vec<u8>) -> Vec<u8> {
+    fn cleanup_html(&self, html: &Vec<u8>) -> Vec<u8> {
         // TODO: When implementing pictures in the epubs, either substitute the photos
         // for the alt text, or download the photos and add relative links. Either way,
         // this will probably have to go.
@@ -284,13 +326,33 @@ impl<'a> ArticleHandler<'a> {
         let re = Regex::new(r"<img(.*?)>").unwrap();
         let output = re.replace_all(&output, "<img$1 />");
         let re = Regex::new(r"<source(.*?)>").unwrap();
-        let output = re.replace_all(&output, "<source$1 />")
+        let mut output = re.replace_all(&output, "<source$1 />")
             // Fixes an issue with remarkable not liking the tag
             .replace("<img />", "")
             // This is to make XHTML happy
             .replace("<hr>", "<hr />");
 
+        // Fix images (or attempt to anyways)
+        for img in &self.images {
+            let split_url = img.rsplit_once("/");
+
+            if let Some((pre, suff)) = split_url {
+                output = output.replace(img, suff);
+            }
+        }
+
         output.into()
+    }
+
+
+    fn image_list(item: &'a PocketItem) -> HashSet<String> {
+        let mut img_list = HashSet::<String>::new();
+
+        for img in item.get_image_refs() {
+            img_list.insert(img.src);
+        }
+
+        img_list
     }
 
 
@@ -318,6 +380,12 @@ impl From<std::io::Error> for Error {
 impl From<reqwest::Error> for Error {
   fn from(error: reqwest::Error) -> Self {
     Error::Reqwest(error)
+  }
+}
+
+impl From<reqwest::header::ToStrError> for Error {
+  fn from(error: reqwest::header::ToStrError) -> Self {
+    Error::HeaderToStr(error)
   }
 }
 

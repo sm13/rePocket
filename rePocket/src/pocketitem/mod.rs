@@ -80,6 +80,26 @@ impl PocketItem {
             None => None,
         }
     }
+
+    pub fn get_image_refs(&self) -> Vec<Image> {
+        let mut img_list = Vec::<Image>::default();
+
+        let has_image = self.has_image.0.unwrap_or(0);
+
+        if has_image == 1 {
+            let map = serde_json::Map::from(self.images.as_ref().expect("Expected an 'images' Object")
+                .as_object().unwrap().clone());
+
+            for (_, v) in map.iter() {
+                if v.is_object() {
+                    img_list.push(serde_json::from_value(v.clone())
+                        .expect("🚨 Could not convert this Value to a PocketItem::Image"));
+                }
+            }
+        }
+
+        img_list
+    }
 }
 
 
@@ -118,4 +138,16 @@ impl<'de> Deserialize<'de> for U64Item {
             Ok(U64Item(Some(v)))
         }
     }
+}
+
+
+#[derive(Default, Debug, Deserialize)]
+pub struct Image {
+    pub image_id: String,
+    pub src: String,
+    item_id: String,
+    width: String,
+    height: String,
+    caption: String,
+    credit: String,
 }
