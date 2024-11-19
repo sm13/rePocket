@@ -2,7 +2,7 @@ use std::{
     error,
     fmt,
     include_str,
-    collections::HashSet,
+    collections::HashMap,
     time::Duration,
     fs::File,
     io::Write,
@@ -48,7 +48,7 @@ pub struct ArticleHandler<'a> {
     description: String,
     content: Vec<u8>,
     canonical: Option<String>,
-    images: HashSet<String>,
+    images: HashMap<String, String>,
 }
 
 
@@ -162,6 +162,7 @@ impl<'a> ArticleHandler<'a> {
                 self.content = body.content.into();
             }
 
+            self.image_list_all().await;
             self.content = self.cleanup_html(&self.content.clone());
 
             Ok(self.html())
@@ -258,20 +259,21 @@ impl<'a> ArticleHandler<'a> {
             .reftype(epub_builder::ReferenceType::Text)).unwrap();
 
         // Add images.
-        for img in &self.images {
-            let res = Self::get_image(&img).await;
+        let mut set_cover = true;
+        for (url, loc) in &self.images {
+            let res = Self::get_image(&url).await;
 
             let (bin, mime_type) = res.expect("Expected bin and mime_type");
 
-            let split_url = img.rsplit_once("/");
+            builder.add_resource(&loc, &*bin, mime_type.clone()).unwrap();
 
-            if let Some((pre, suff)) = split_url {
-                builder.add_resource(suff, &*bin, mime_type).unwrap();
+            if set_cover {
+                set_cover = false;
+                // Add cover image
+                builder.add_cover_image(&loc, &*bin, mime_type).unwrap();
             }
         }
 
-        // Add cover image?
-        //builder.add_cover_image().unwrap();
 
         let mut epub: Vec<u8> = vec!();
 
@@ -333,26 +335,61 @@ impl<'a> ArticleHandler<'a> {
             .replace("<hr>", "<hr />");
 
         // Fix images (or attempt to anyways)
-        for img in &self.images {
-            let split_url = img.rsplit_once("/");
-
-            if let Some((pre, suff)) = split_url {
-                output = output.replace(img, suff);
-            }
+        for (k, v) in &self.images {
+            output = output.replace(k, v);
         }
 
         output.into()
     }
 
 
-    fn image_list(item: &'a PocketItem) -> HashSet<String> {
-        let mut img_list = HashSet::<String>::new();
+    // Get image URLs as Pocket identifies them
+    fn image_list(item: &'a PocketItem) -> HashMap<String, String> {
+        let mut img_list = HashMap::<String, String>::new();
 
         for img in item.get_image_refs() {
-            img_list.insert(img.src);
+            let split_url = img.src.rsplit_once("/");
+
+            if let Some((pre, suff)) = split_url {
+                img_list.insert(img.src.clone(), suff.to_string());
+            }
         }
 
         img_list
+    }
+
+
+    // Get image URLs from the HTML, and save them into our list with **extensions**
+    async fn image_list_all(&mut self) -> Result<(), Error> {
+        // First find the images in the HTML.
+        let re = Regex::new(r#"<img.*?src="(?<url>.*?)".*?>"#).unwrap();
+        let cont = String::from_utf8(self.content.clone()).unwrap();
+        let imgs = re.captures_iter(&cont);
+
+        let mut client = reqwest::Client::builder()
+            .user_agent(APP_USER_AGENT)
+            .timeout(Duration::new(30, 0))
+            .build();
+
+        for img in imgs {
+            let url = img["url"].to_string();
+
+            let body = client.as_ref().expect("🚨 Cannot open reqwest client to get Image header")
+                .head(&url)
+                .send()
+                .await
+                .map_err(|e| { Error::Reqwest(e) })?;
+
+            let mime_type = body.headers()["content-type"].to_str()?.to_string();
+            let (_, ext) = mime_type.rsplit_once("/").expect("Expected a proper mime_type");
+
+            let uuid = utils::uuid_to_string(Uuid::new_v5(&Uuid::NAMESPACE_OID, url.as_bytes()));
+            let mut fname = format!("p{}.{}", uuid, ext);
+
+            self.images.insert(url, fname);
+        }
+
+        Ok(())
     }
 
 

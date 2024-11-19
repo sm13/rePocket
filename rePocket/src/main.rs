@@ -104,10 +104,7 @@ async fn main() {
 
     fhandler.save_config();
 
-
-    if env!("VERBOSITY") > "0" {
-        println!("ℹ {:#?}", fhandler);
-    }
+    println!("ℹ {:#?}", fhandler);
 
     // Perhaps the next thing to do is to create a database with this info.
     // If the .db exists, then we load it from file, if it doesn't we created from the fields.

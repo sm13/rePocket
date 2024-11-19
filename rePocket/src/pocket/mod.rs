@@ -66,19 +66,19 @@ impl Pocket {
                 self.init_from_json(val.json().await.unwrap());
             },
             StatusCode::BAD_REQUEST => {
-                println!("🚨 Invalid request, please make sure you follow the documentation for proper syntax");
+                println!("🚨 Pocket: Invalid request, please make sure you follow the documentation for proper syntax");
             },
             StatusCode::UNAUTHORIZED => {
-                println!("🚨 Problem authenticating the user");
+                println!("🚨 Pocket: Problem authenticating the user");
             },
             StatusCode::FORBIDDEN => {
-                println!("🚨 User was authenticated, but access denied due to lack of permission or rate limiting");
+                println!("🚨 Pocket: User was authenticated, but access denied due to lack of permission or rate limiting");
             },
             StatusCode::SERVICE_UNAVAILABLE => {
-                println!("🚨 Pocket's sync server is down for scheduled maintenance");
+                println!("🚨 Pocket: Pocket's sync server is down for scheduled maintenance");
             },
             _ => {
-                println!("🚨 Unkown error encountered");
+                println!("🚨 Pocket: Unknown error encountered");
             },
         }
     }
