@@ -134,11 +134,10 @@ impl<'a> ArticleHandler<'a> {
 
             // If some fields are missing fill them with some defaults.
             self.author = meta.byline.unwrap_or_else(|| "Unknown".into());
-            self.page_title = meta.page_title.unwrap_or_else(|| "Page".into());
-            self.article_title = meta.article_title.unwrap_or_else(|| "Article".into());
-            self.description = meta.description.unwrap_or_else(|| "Description".into());
+            self.page_title = Self::encode_text(&meta.page_title.unwrap_or_else(|| "Page".into()));
+            self.article_title = Self::encode_text(&meta.article_title.unwrap_or_else(|| "Article".into()));
+            self.description = Self::encode_text(&meta.description.unwrap_or_else(|| "Description".into()));
             self.canonical = Some(url.to_string());
-
 
             // Some websites appear empty or very short using readable::readability.
             // Thus, also obtain them with readability::extractor to choose the best one.
@@ -327,12 +326,16 @@ impl<'a> ArticleHandler<'a> {
 
         let re = Regex::new(r"<img(.*?)>").unwrap();
         let output = re.replace_all(&output, "<img$1 />");
+        let re = Regex::new(r"<map>.*?</map>").unwrap();
+        let output = re.replace_all(&output, "");
         let re = Regex::new(r"<source(.*?)>").unwrap();
         let mut output = re.replace_all(&output, "<source$1 />")
-            // Fixes an issue with remarkable not liking the tag
+            // Fixes an issue with remarkable not liking the tag, as in make it XTHML
             .replace("<img />", "")
             // This is to make XHTML happy
-            .replace("<hr>", "<hr />");
+            .replace("<hr>", "<hr />")
+            // This is also to make XHTML happy
+            .replace("<br>", "<br />");
 
         // Fix images (or attempt to anyways)
         for (k, v) in &self.images {
@@ -342,6 +345,18 @@ impl<'a> ArticleHandler<'a> {
         output.into()
     }
 
+
+    // This function is similar to (I guess) what html_scape::encode_text() does.
+    // In summary, encondes &, >, and < in strings to make them HTML-able.
+    fn encode_text(non_html: &str) -> String {
+        // This is also to make XHTML happy, or remarkable, I don't even know anymore
+        let html = non_html
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;");
+
+        html
+    }
 
     // Get image URLs as Pocket identifies them
     fn image_list(item: &'a PocketItem) -> HashMap<String, String> {
