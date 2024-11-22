@@ -9,6 +9,8 @@ version = "0.2.0"
 authors = ["Damián <damian@mykolab.com>"]
 description = "Tools to access Pocket from a reMarkable"
 edition = "2021"
+license = "GPL-3.0"
+license-file = "COPYING"
 
 
 [patch.crates-io]
