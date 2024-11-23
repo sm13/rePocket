@@ -378,11 +378,21 @@ impl<'a> ArticleHandler<'a> {
     fn image_list(item: &'a PocketItem) -> HashMap<String, String> {
         let mut img_list = HashMap::<String, String>::new();
 
-        for img in item.get_image_refs() {
-            let split_url = img.src.rsplit_once("/");
+        // Note: I've wrapped this around an environment variable that I don't intend to use simply
+        // for the purpose of masking the code. If this is to be used instead of the
+        // image_list_all() method, this will need to clean the suffix in 2 ways because images
+        // with names such as this aberration need fixing:
+        //      070f1ffa-b9a0-444e-9324-9ad79b6be766.png_auto_compress_format_format_webp
+        //  1. They must have a proper extension.
+        //  2. They must begin with a letter, I chose 'p' for picture.
+        if env!("USE_POCKET_IMAGE_LIST") == "1" {
+            for img in item.get_image_refs() {
+                let split_url = img.src.rsplit_once("/");
 
-            if let Some((pre, suff)) = split_url {
-                img_list.insert(img.src.clone(), suff.to_string());
+                if let Some((pre, suff)) = split_url {
+                    println!("IMG: {:#?}", suff.clone());
+                    img_list.insert(img.src.clone(), suff.to_string());
+                }
             }
         }
 
