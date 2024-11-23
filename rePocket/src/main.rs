@@ -47,8 +47,8 @@ async fn main() {
         .set_detail_type("Complete")
         //.set_search("learn")
         //.set_domain(".com")
-        //.set_since(since)
-        .set_count(5)
+        .set_since(since)
+        .set_count(10)
         .set_offset(0)
         .set_total(1)
         .build();
