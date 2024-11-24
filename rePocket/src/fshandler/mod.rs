@@ -48,6 +48,9 @@ pub struct FSHandler {
     // The UUID of the file representing the Pocket/Archive folder
     #[serde(default)]
     archive: UniqID,
+    // The UUID of the file representing the Pocket/Sync folder
+    #[serde(default)]
+    sync_trigger: UniqID,
     // The items currenlty present in the folder
     current_items: BTreeMap<UniqID, u64>,
     // Read and archived items
@@ -77,8 +80,9 @@ pub struct FSHandler {
 // /home/root/**/XOCHITL_ROOT/Pocket/.
 //                                   ├── Article1.epub
 //                                   ├── Article2.epub
-//                                   └── Archive
-//                                       └── Article3.epub
+//                                   ├── Archive
+//                                   |   └── Article3.epub
+//                                   └── Sync
 //
 // Which really looks like this:
 // XOCHITL_ROOT/.
@@ -92,13 +96,16 @@ pub struct FSHandler {
 //              |..
 //              ├── Articlen-uuid.epub
 //              ├── Articlen-uuid.content
-//              └── Articlen-uuid.metadata
+//              ├── Articlen-uuid.metadata
+//              ├── sync-uuid.content
+//              └── sync-uuid.meta
 //
 impl FSHandler {
     pub fn new() -> Self {
         Self {
             folder: UniqID::new(),
             archive: UniqID::new(),
+            sync_trigger: UniqID::new(),
             current_items: BTreeMap::new(),
             archived_items: BTreeMap::new(),
             new_items: BTreeMap::new(),
@@ -144,6 +151,7 @@ impl FSHandler {
     // {
     //      "folder": "string",
     //      "archive": "string",
+    //      "sync_trigger": "string",
     //      "ts_last_query": integer,
     //      "current_items": {
     //          "string" :integer,
@@ -176,7 +184,10 @@ impl FSHandler {
         let pocket_res = self.mkdir(&self.parent_uuid_string(), "Pocket", "");
 
         // Pocket/Archive directory:
-        self.mkdir(&self.archive_uuid_string(), "Archive", &self.parent_uuid_string())?;
+        let pocket_res = self.mkdir(&self.archive_uuid_string(), "Archive", &self.parent_uuid_string());
+
+        // Pocket/Sync directory:
+        self.mkdir(&self.sync_uuid_string(), "Sync", &self.parent_uuid_string())?;
 
         pocket_res
     }
@@ -254,6 +265,11 @@ impl FSHandler {
             self.archive = UniqID::new();
         }
 
+        if self.sync_trigger.uuid.is_nil() {
+            self.sync_trigger = UniqID::new();
+        }
+
+
         // Go through the list of current items:
         // - If the files is missing, then archive in pocket
         // - If the files exist, but the metadata indicates 'deleted', then archive in pocket
@@ -298,6 +314,12 @@ impl FSHandler {
     pub fn archive_uuid_string(&self) -> String {
         utils::uuid_to_string(self.archive.uuid)
     }
+
+
+    pub fn sync_uuid_string(&self) -> String {
+        utils::uuid_to_string(self.sync_trigger.uuid)
+    }
+
 
 
     pub fn clear_read(&mut self) {
