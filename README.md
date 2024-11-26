@@ -8,13 +8,13 @@ Another reMarkable native application to ~~sync~~ download the latest articles f
 
 * Archive articles in Pocket by moving them to the folder Pocket/Archive in the reMarkable
 
-* Syncing is user triggered from the UI, (or the CLI). Any changes to the `Sync` folder will trigger syncing
+* Syncing is user triggered from the UI, (or the CLI). Any changes to the `Sync` folder will trigger syncing. Changes in this instance means adding as Favorite, or editing a tag, as simple as that!
 
 * The tool can be built and run in a host to generate all the files necessary to create the folder and its contents and add them to the device via SSH
 
 * The installation should be impervious to reMarkable updates
 
-## Future Features
+## Future Features and _Featured_ Bugs
 
 For a full list visit registered [enhancements](https://github.com/sm13/rePocket/labels/enhancement)
 
