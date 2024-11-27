@@ -24,6 +24,8 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
     - uses: actions/checkout@v4
+    - name: Install rustup targets
+      run: rustup target add aarch64-apple-darwin
     - name: Install cross-compilation tools for Rust
       uses: taiki-e/setup-cross-toolchain-action@v1.24.0
       with:
