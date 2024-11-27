@@ -168,6 +168,7 @@ impl QueryBuilder {
         self
     }
 
+    #[allow(dead_code)]
     pub fn set_content_type(mut self, content_type: &str) -> Self {
         self.content_type = Some(QContentType::from_str(content_type).unwrap());
 

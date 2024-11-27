@@ -25,7 +25,7 @@ use pocket::Pocket;
 use fshandler::FSHandler;
 use pocketquery::QueryBuilder;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use reqwest::StatusCode;
 use tokio::sync::mpsc::{channel, Receiver};
 use notify_debouncer_mini::{
@@ -49,7 +49,7 @@ async fn main() {
     let path = fshandler::XOCHITL_ROOT.to_string();
 
 
-    if let Err(e) = async_watch(path, pocket, fhandler).await {
+    if let Err(e) = async_watch(path, &mut pocket, &mut fhandler).await {
         println!("🚨 Error: {:?}", e)
     }
 }
@@ -64,7 +64,7 @@ fn async_watcher() -> notify::Result<(Debouncer<RecommendedWatcher>, Receiver<no
     let thandle = tokio::runtime::Handle::current();
 
     // Automatically select the best implementation for the underlying platform.
-    let mut debouncer = new_debouncer(std::time::Duration::from_secs(1),
+    let debouncer = new_debouncer(std::time::Duration::from_secs(1),
         move |res| {
             thandle.block_on(async {
                 tx.send(res).await.unwrap();
@@ -76,7 +76,7 @@ fn async_watcher() -> notify::Result<(Debouncer<RecommendedWatcher>, Receiver<no
 }
 
 
-async fn async_watch<P: AsRef<Path>>(path: P, mut pocket: Pocket, mut fhandler: FSHandler) -> notify::Result<()> {
+async fn async_watch<P: AsRef<Path>>(path: P, pocket: &mut Pocket, fhandler: &mut FSHandler) -> notify::Result<()> {
     let wfname = path.as_ref().join(fhandler.sync_uuid_string() + ".metadata");
     let (mut debouncer, mut rx) = async_watcher().expect("Could not start notify");
 
@@ -85,7 +85,7 @@ async fn async_watch<P: AsRef<Path>>(path: P, mut pocket: Pocket, mut fhandler: 
 
     while let Some(res) = rx.recv().await {
         match res {
-            Ok(mut events) => {
+            Ok(events) => {
 
                 for event in events {
                     if event.path == wfname && event.kind == DebouncedEventKind::Any {
@@ -155,7 +155,7 @@ async fn async_watch<P: AsRef<Path>>(path: P, mut pocket: Pocket, mut fhandler: 
                                             // Tag all items
                                             for id in fhandler.read_ids() {
                                                 println!("ℹ Tagging item id {:?} with tag 'repocket'", id);
-                                                let res = pocket.add_tag(id, vec!["repocket".to_string()]).await;
+                                                let _res = pocket.add_tag(id, vec!["repocket".to_string()]).await;
                                             }
 
                                             // Remove all items form the read_items entry in the FSHandler.
@@ -172,23 +172,28 @@ async fn async_watch<P: AsRef<Path>>(path: P, mut pocket: Pocket, mut fhandler: 
                         // Save and reload fhandler.
                         fhandler.save_config();
 
-                        let mut fhandler = FSHandler::load();
+                        let fhandler = FSHandler::load();
 
                         println!("ℹ Unwatching the Sync folder while Xochitl restarts");
-                        debouncer.watcher().unwatch(path.as_ref());
-                        let cmd = std::thread::spawn(move || {
-                            std::process::Command::new("systemctl")
-                                .arg("restart")
-                                .arg("xochitl")
-                                .output()
-                                .expect("Could not restart Xochitl");
+                        let _ = debouncer.watcher().unwatch(path.as_ref());
 
-                            println!(" .. sleeping for some empirical number of seconds during restart");
+                        if cfg!(target_abi = "eabihf") {
+                            let cmd = std::thread::spawn(move || {
+                                std::process::Command::new("systemctl")
+                                    .arg("restart")
+                                    .arg("xochitl")
+                                    .output()
+                                    .expect("Could not restart Xochitl");
 
-                            std::thread::sleep(std::time::Duration::new(30, 0));
-                        });
+                                println!(" .. sleeping for some empirical number of seconds during restart");
 
-                        let result = cmd.join().unwrap();
+                                std::thread::sleep(std::time::Duration::new(30, 0));
+                            });
+
+                            let _result = cmd.join().unwrap();
+                        } else {
+                            println!("ℹ In the remarkable we'd be restarting Xochitl");
+                        }
 
                         println!("ℹ Watching the Sync folder again");
                         debouncer.watcher().watch(path.as_ref(), RecursiveMode::NonRecursive).unwrap();

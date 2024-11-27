@@ -181,7 +181,7 @@ impl FSHandler {
 
     pub fn mkdir_pocket(&self) -> Result<(), std::io::Error> {
         // Pocket directory:
-        let pocket_res = self.mkdir(&self.parent_uuid_string(), "Pocket", "");
+        let _ = self.mkdir(&self.parent_uuid_string(), "Pocket", "");
 
         // Pocket/Archive directory:
         let pocket_res = self.mkdir(&self.archive_uuid_string(), "Archive", &self.parent_uuid_string());
@@ -274,7 +274,7 @@ impl FSHandler {
         // - If the files is missing, then archive in pocket
         // - If the files exist, but the metadata indicates 'deleted', then archive in pocket
         // - Otherwise it's all good.
-        for (uid, apid) in self.current_items.clone() {
+        for (uid, _) in self.current_items.clone() {
             let fname = XOCHITL_ROOT.to_string() + "/" + &utils::uuid_to_string(uid.uuid) + ".metadata";
             let metadata = Metadata::load(&fname);
 
@@ -297,7 +297,7 @@ impl FSHandler {
         }
 
         // Then move the new items to the current items list.
-        for (uid, apid) in self.new_items.clone() {
+        for (uid, _) in self.new_items.clone() {
             if let Some(val) = self.new_items.remove(&uid) {
                 self.current_items.insert(uid.clone(), val);
                 println!("ℹ Moved item with uuid {} into the current_items list", &utils::uuid_to_string(uid.uuid));
