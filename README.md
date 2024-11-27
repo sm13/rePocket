@@ -44,6 +44,8 @@ The script will do the following:
 
 - Connect via SSH to the reMarkable to create the neccesary file structure and copy the `rePocket` binary
 
+- Createa a Linux service file, enable it and start it
+
 ```
 # If will create the following folders, if necessary
 #
@@ -52,6 +54,7 @@ The script will do the following:
 #
 # It will copy rePocket to ~/.local/bin
 # It will move the authentication file to ~/.local/share/repocket
+# It will add the repocket.service to /etc/systemd/system
 ```
 
 ## Thank yous! Credits, and the like
