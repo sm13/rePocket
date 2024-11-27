@@ -1,0 +1,36 @@
+name: Build Apps
+
+on:
+  push:
+    branches: [ "main", "wip" ]
+    
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-rePocketAuth:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build rePocketAuth
+      working-directory: ./rePocketAuth
+      run: cargo build --release
+
+  build-rePocket:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install rustup targets
+      run: rustup target add aarch64-apple-darwin
+    - name: Install cross-compilation tools for Rust
+      uses: taiki-e/setup-cross-toolchain-action@v1.24.0
+      with:
+        # Target name
+        target: armv7-unknown-linux-gnueabihf
+    - name: Build rePocket
+      working-directory: ./rePocket
+      run: cargo build --release --target armv7-unknown-linux-gnueabihf
