@@ -31,4 +31,4 @@ jobs:
         target: armv7-unknown-linux-gnueabihf
     - name: Build rePocket
       working-directory: ./rePocket
-      run: cargo build --release
+      run: cargo build --release --target armv7-unknown-linux-gnueabihf
