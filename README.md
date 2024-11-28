@@ -6,13 +6,15 @@ Another reMarkable native application to ~~sync~~ download the latest articles f
 
 * Downloads the latest 10 _articles_ since the previous request. Articles will include _some_ images!
 
-* Archive articles in Pocket by moving them to the folder Pocket/Archive in the reMarkable. Syncs when running rePocket!
+* Archive articles in Pocket by moving them to the folder Pocket/Archive in the reMarkable
+
+* Syncing is user triggered from the UI, (or the CLI). Any changes to the `Sync` folder will trigger syncing. Changes in this instance means adding as Favorite, or editing a tag, as simple as that!
 
 * The tool can be built and run in a host to generate all the files necessary to create the folder and its contents and add them to the device via SSH
 
 * The installation should be impervious to reMarkable updates
 
-## Future Features
+## Future Features and _Featured_ Bugs
 
 For a full list visit registered [enhancements](https://github.com/sm13/rePocket/labels/enhancement)
 
@@ -42,6 +44,8 @@ The script will do the following:
 
 - Connect via SSH to the reMarkable to create the neccesary file structure and copy the `rePocket` binary
 
+- Createa a Linux service file, enable it and start it
+
 ```
 # If will create the following folders, if necessary
 #
@@ -50,6 +54,7 @@ The script will do the following:
 #
 # It will copy rePocket to ~/.local/bin
 # It will move the authentication file to ~/.local/share/repocket
+# It will add the repocket.service to /etc/systemd/system
 ```
 
 ## Thank yous! Credits, and the like

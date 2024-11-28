@@ -97,6 +97,7 @@ impl PocketItem {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_image_refs(&self) -> Vec<Image> {
         let mut img_list = Vec::<Image>::default();
 
@@ -157,6 +158,7 @@ impl<'de> Deserialize<'de> for U64Item {
 }
 
 
+#[allow(dead_code)]
 #[derive(Default, Debug, Deserialize)]
 pub struct Image {
     pub image_id: String,

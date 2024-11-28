@@ -38,7 +38,7 @@ use epub_builder::{
 use crate::pocketitem::PocketItem;
 use crate::utils;
 
-static APP_USER_AGENT: &str = "rePocket/v0.2.0";
+static APP_USER_AGENT: &str = "rePocket/v0.3.0";
 
 
 #[derive(Debug)]
@@ -177,7 +177,7 @@ impl<'a> ArticleHandler<'a> {
                 self.content = body.content.into();
             }
 
-            self.image_list_all().await;
+            let _ = self.image_list_all().await;
             self.content = self.cleanup_html(&self.content.clone());
 
             Ok(self.html())
@@ -375,10 +375,8 @@ impl<'a> ArticleHandler<'a> {
     }
 
     // Get image URLs as Pocket identifies them
-    fn image_list(item: &'a PocketItem) -> HashMap<String, String> {
-        let mut img_list = HashMap::<String, String>::new();
-
-        img_list
+    fn image_list(_item: &'a PocketItem) -> HashMap<String, String> {
+        HashMap::<String, String>::new()
     }
 
 
@@ -389,7 +387,7 @@ impl<'a> ArticleHandler<'a> {
         let cont = String::from_utf8(self.content.clone()).unwrap();
         let imgs = re.captures_iter(&cont);
 
-        let mut client = reqwest::Client::builder()
+        let client = reqwest::Client::builder()
             .user_agent(APP_USER_AGENT)
             .timeout(Duration::new(30, 0))
             .build();
@@ -407,7 +405,7 @@ impl<'a> ArticleHandler<'a> {
             let (_, ext) = mime_type.rsplit_once("/").expect("Expected a proper mime_type");
 
             let uuid = utils::uuid_to_string(Uuid::new_v5(&Uuid::NAMESPACE_OID, url.as_bytes()));
-            let mut fname = format!("p{}.{}", uuid, ext);
+            let fname = format!("p{}.{}", uuid, ext);
 
             self.images.insert(url, fname);
         }

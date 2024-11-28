@@ -1,0 +1,15 @@
+[Unit]
+Description=rePocket service
+After=home.mount network.target xochitl.service
+OnFailure=xochitl.service
+
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+ExecStart=/home/root/.local/bin/rePocket
+
+
+[Install]
+WantedBy=multi-user.target
