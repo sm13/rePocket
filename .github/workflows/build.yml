@@ -3,7 +3,9 @@ name: Build Apps
 on:
   push:
     branches: [ "main", "wip" ]
-    
+    tags:
+    - '*'
+
   pull_request:
     branches: [ "main" ]
 
