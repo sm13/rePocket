@@ -1,22 +1,26 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows: ["Build Apps"]
-    branches: [main]
-    types:
-      - completed
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  on-success:
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+    - name: Download the binary form the build job
+      uses: actions/download-artifact@v4
+      with:
+        name: rePocket
+        path: build/release
+        github-token: ${{ github.token }}
     - uses: ncipollo/release-action@v1
       with:
-        artifacts: "target/armv7-unknown-linux-gnueabihf/release/rePocket"
+        artifacts: "build/release/rePocket"
+        tag: "${{ github.ref_name }}"
