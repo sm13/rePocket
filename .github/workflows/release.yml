@@ -20,7 +20,8 @@ jobs:
         name: rePocket
         path: build/release
         github-token: ${{ github.token }}
+    - run: ./scripts/simple_package.sh
     - uses: ncipollo/release-action@v1
       with:
-        artifacts: "build/release/rePocket"
+        artifacts: "rePocket.tar.gz"
         tag: "${{ github.ref_name }}"

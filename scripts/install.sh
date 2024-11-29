@@ -15,14 +15,22 @@
 # this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <path to rePocket binary>"
+    exit 1
+fi
 
 
 REMARKABLE_HOST="remarkable"
 LOCAL_BIN_DIR=".local/bin"
 REPOCKET_DIR=".local/share/repocket/"
 AUTH_FILE="data/.repocket.key"
-BIN_FILE="target/armv7-unknown-linux-gnueabihf/release/rePocket"
 SERVICE_FILE="rePocket/repocket.service"
+# Left here for reference. Use the first when building from code, the second
+# when using the GitHub release.
+# BIN_FILE="target/armv7-unknown-linux-gnueabihf/release/rePocket"
+# BIN_FILE="build/release/rePocket"
+BIN_FILE=$1
 
 
 echo "Create the necessary folders.."

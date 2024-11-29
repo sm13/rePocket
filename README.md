@@ -26,23 +26,36 @@ For a full list visit registered [enhancements](https://github.com/sm13/rePocket
 * [Rust](https://www.rust-lang.org/learn/get-started) and Cargo in order to build from sources
 * If you'd like to run the binary in the device, you'll need a cross-compiler toolchain. You can follow one of the guides from [here](https://remarkable.guide/devel/toolchains.html). Under macos, I ended up installing the toolchain provided [here](https://github.com/messense/homebrew-macos-cross-toolchains/) (mostly because I found the other resource _later_)
 
-### Steps
+### Build from source and install
 
 - Clone the repository
 
-- Build the binaries ([rePocketAuth](../README.md) and [rePocket](../README.md)) fom sources following the instructions for each of them
+- Build the binaries ([rePocketAuth](../README.md) and [rePocket](../README.md)) from sources following the instructions for each of them
 
-- Run the installation script from the repositrory root
+- Run the installation script from the repository root:
 
 ```bash
-./install.sh
+# Usage: ./scripts/install.sh <path to rePocket binary>"
+./scripts/install.sh target/armv7-unknown-linux-gnueabihf/release/rePocket
+```
+
+### Download a release and install
+
+- Download a [release](https://github.com/sm13/rePocket/releases).
+
+- Unarchive and install:
+
+```bash
+tar -xvf rePocket.tar.gz
+cd rePocket
+./scripts/install.sh build/release/rePocket
 ```
 
 The script will do the following:
 
 - Launch `rePocketAuth` to authenticate _your_ build for the app with Pocket
 
-- Connect via SSH to the reMarkable to create the neccesary file structure and copy the `rePocket` binary
+- Connect via SSH to the reMarkable to create the necessary file structure and copy the `rePocket` binary
 
 - Createa a Linux service file, enable it and start it
 
